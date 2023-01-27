@@ -10,6 +10,7 @@ import torch.utils.data
 
 from climbing.dataset import ClimbDataset
 
+from pathlib import Path
 
 class Net(nn.Module):
     def __init__(self):
@@ -21,7 +22,8 @@ class Net(nn.Module):
         self.dropout2 = nn.Dropout(0.25)
         self.fc1 = nn.Linear(2688, 128)
         # 39 is maximum difficulty in kilter board app
-        self.fc2 = nn.Linear(128, 39)
+        # self.fc2 = nn.Linear(128, 39)
+        self.fc2 = nn.Linear(128, 1)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -38,18 +40,22 @@ class Net(nn.Module):
         x = F.elu(x)
         x = self.dropout2(x)
         x = self.fc2(x)
-        output = F.log_softmax(x, dim=1)
+        # output = F.log_softmax(x, dim=1)
+        output = torch.sigmoid(x)
+        # allowing it to easily reach the max difficulty of 38
+        output = output * 100
         return output
 
 
 def train(args, model, device, train_loader, optimizer, epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
-        target = target.long()
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        loss = F.nll_loss(output, target)
+        # target = target.long()
+        # loss = F.nll_loss(output, target)
+        loss = F.mse_loss(output, target[..., None])
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
@@ -66,30 +72,33 @@ def test(model, device, test_loader):
     correct = 0
     with torch.no_grad():
         for data, target in test_loader:
-            target = target.long()
             data, target = data.to(device), target.to(device)
             output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
+            # target = target.long()
+            # test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
+            # pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+            # correct += pred.eq(target.view_as(pred)).sum().item()
+            test_loss += F.mse_loss(output, target[..., None], reduction="sum").item()
 
     test_loss /= len(test_loader.dataset)
 
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
+    # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+    #     test_loss, correct, len(test_loader.dataset),
+    #     100. * correct / len(test_loader.dataset)))
+
+    print(f'\nTest set: Average loss: {test_loss:.4f}\n')
 
 
 def main():
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=32, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=100, metavar='N',
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                         help='number of epochs to train (default: 14)')
-    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate (default: 1.0)')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
                         help='Learning rate step gamma (default: 0.7)')
@@ -128,7 +137,11 @@ def main():
         transforms.ToTensor(),
         # transforms.Normalize((0,), (4,)),
         ])
-    dataset = ClimbDataset(transform=transform)
+    if Path("climb_dataset.pt").exists():
+        dataset = torch.load("climb_dataset.pt")
+    else:
+        dataset = ClimbDataset(transform=transform)
+        torch.save(dataset, "climb_dataset.pt")
     train_set_size = int(len(dataset)*0.9)
     test_set_size = len(dataset) - train_set_size
     train_set, test_set = torch.utils.data.random_split(dataset, [train_set_size, test_set_size], generator=torch.Generator().manual_seed(123))

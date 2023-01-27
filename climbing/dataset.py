@@ -20,7 +20,8 @@ class ClimbDataset(torch.utils.data.Dataset):
         img[..., 1] = img[..., 1] / 90
         img = self.transform(img).float()
         # -1 because difficulty is {1, 2, ..., 39}
-        return img, climb_data.difficulty_average - 1
+        difficulty_average = torch.tensor(climb_data.difficulty_average - 1)
+        return img, difficulty_average
     
     def __len__(self):
         return len(self.climbs)
