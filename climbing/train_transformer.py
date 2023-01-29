@@ -1,127 +1,99 @@
+from climbing.model_transformer import ClimbingSimpleViT
+from climbing.dataset import ClimbDatasetTransformer
+import argparse
 import torch
-from torch import nn
-import random
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.optim.lr_scheduler import StepLR
+import torch.utils.data
+from typing import Union, Literal
 
-from einops import rearrange
-from einops.layers.torch import Rearrange
-
-from vit_pytorch.simple_vit import pair, Transformer, posemb_sincos_2d
-
-from climbing.db import ClimbData, MAX_Y, MAX_X
-
-def kilter_posemb_sincos_2d(patches, patches_pos, temperature = 10000, dtype = torch.float32):
-    # _, h, w, dim, device, dtype = *patches.shape, patches.device, patches.dtype
-    dim, device, dtype = patches.shape[-1], patches.device, patches.dtype
-    x, y = patches_pos[..., (0,)], patches_pos[..., (1,)]
-
-    assert (dim % 4) == 0, 'feature dimension must be multiple of 4 for sincos emb'
-    omega = torch.arange(dim // 4, device = device) / (dim // 4 - 1)
-    omega = 1. / (temperature ** omega)
-
-    y = y * omega[None, None, :]
-    x = x * omega[None, None, :] 
-    pe = torch.cat((x.sin(), x.cos(), y.sin(), y.cos()), dim=-1)
-    return pe.type(dtype)
-
-class LastLayer(nn.Module):
-    def forward(self, x):
-        # regression
-        x = torch.sigmoid(x)
-        # allowing it to reach 39 easily
-        x = x*50
-        return x
-
-class ClimbingSimpleViT(nn.Module):
-    # adapted from from vit_pytorch.simple_vit.SimpleVit
-
-    def __init__(self, *, hold_data_len, dim, depth, heads, mlp_dim, dim_head = 64):
-        """
-        hold_data_len includes the two positional values
-        """
-        super().__init__()
-
-        self.to_angle_embedding = nn.Sequential(
-            nn.Linear(1, dim//2),
-            nn.ReLU(inplace=True),
-            nn.Linear(dim//2, dim),
-
-        )
-        self.to_holds_embedding = nn.Sequential(
-            nn.Linear(hold_data_len-2, dim//2),
-            nn.ReLU(inplace=True),
-            nn.Linear(dim//2, dim),
-        )
-
-        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim)
-
-        self.to_latent = nn.Identity()
-        self.linear_head = nn.Sequential(
-            nn.LayerNorm(dim),
-            nn.Linear(dim, 1),
-            LastLayer(),
-        )
-
-    def forward(self, data_in):
-        angle = data_in[..., (0,), 0][..., None] # only first value of angle is useful.
-        holds_pos = data_in[..., 1:, 0:2]
-        holds = data_in[..., 1:, 2:]
-
-        # normalize angle (not sure this is the best way but should work)
-        angle -= 30
-        angle /= 180.0
-
-        # TODO: find better way to insert angle data
-        # TODO: try 3D positional embeddings instead of one angle value?
-        # TODO: try adding angle embedding to holds embedding?
-        angle = self.to_angle_embedding(angle)
-        holds = self.to_holds_embedding(holds)
-
-        # Add positional embedding to holds
-        positional_encoding = kilter_posemb_sincos_2d(holds, holds_pos)
-        holds = holds + positional_encoding
-
-        x = torch.concat([angle, holds], dim=-2)
-        # data_in holds has been padded with some -1 values to mark end of sentence.
-        # we find this index and replace values with zeroes.
-        for i in range(data_in.shape[0]):
-            sep_pos = (data_in[i, ..., 0] == -1).nonzero(as_tuple=True)[0][0]
-            # TODO: validate that doing this makes sense for a ViT (check what BERT does with the SEP and CLS tokens)
-            # SEP
-            x[i, sep_pos, 0] = 1  
-            x[i, sep_pos, 1:] = 0
-            # PAD
-            x[i, sep_pos+1:, :] = 0  
-
-        x = self.transformer(x)
-        # TODO: check if using mean here is usual. It reduces from [b, n_holds, 32] to [b, 32]
-        x = x.mean(dim = 1)
-
-        x = self.to_latent(x)
-        x = self.linear_head(x)
-        return x
+from pathlib import Path
 
 
-v = ClimbingSimpleViT(
-    hold_data_len=2+1,
-    dim = 32,
-    depth = 6,
-    heads = 16,
-    mlp_dim = 2048
-)
+def train(args, model, device, train_loader, optimizer, epoch, log_interval=10, loss_type="regression"):
+    model.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        if loss_type == "regression":
+            loss = F.mse_loss(output, target[..., None])
+        elif loss_type == "classification":
+            target = target.long()
+            loss = F.nll_loss(output, target)
+        else:
+            ValueError()
+        loss.backward()
+        optimizer.step()
+        if batch_idx % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_idx * len(data), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item()))
+            if args.dry_run:
+                break
 
 
+def test(model, device, test_loader, loss_type="regression"):
+    model.eval()
+    test_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            if loss_type == "regression":
+                test_loss += F.mse_loss(output, target[..., None], reduction="sum").item()
+            elif loss_type == "classification":
+                target = target.long()
+                test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
+                pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+                correct += pred.eq(target.view_as(pred)).sum().item()
 
-### example usage
-batch_size = 5
-hold_data_len = 2+1  # x, y, HOLD_TYPE
-angle = torch.randn(batch_size, 1, hold_data_len) * 100
-angle[..., 1:] = -1  # not required but helps to debug
-holds = torch.randn(batch_size, 31, hold_data_len)
-for i in range(batch_size):
-    # randomply place sentense stop token
-    sep_pos = random.randint(5, 30)
-    holds[i, sep_pos:, :] = -1
+    test_loss /= len(test_loader.dataset)
 
-x = torch.concat([angle, holds], dim=-2)
+    if loss_type == "regression":
+        print(f'\nTest set: Average loss: {test_loss:.4f}\n')
+    elif loss_type == "classification":
+        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+            test_loss, correct, len(test_loader.dataset),
+            100. * correct / len(test_loader.dataset)))
 
-preds = v(x)
+
+def main():
+    train_kwargs = {'batch_size': 8}
+    test_kwargs = {'batch_size': 8}
+
+    model = ClimbingSimpleViT(
+        hold_data_len=2+1,
+        dim = 512,
+        depth = 6,
+        heads = 16,
+        mlp_dim = 1024
+    )
+    if Path("_datasets/cache/climb_dataset_transformer.pt").exists():
+        dataset = torch.load("_datasets/cache/climb_dataset_transformer.pt")
+    else:
+        dataset = ClimbDatasetTransformer()
+        torch.save(dataset, "_datasets/cache/climb_dataset_transformer.pt")
+    train_set_size = int(len(dataset)*0.9)
+    test_set_size = len(dataset) - train_set_size
+    train_set, test_set = torch.utils.data.random_split(dataset, [train_set_size, test_set_size], generator=torch.Generator().manual_seed(123))
+    train_loader = torch.utils.data.DataLoader(train_set,**train_kwargs)
+    test_loader = torch.utils.data.DataLoader(test_set, **test_kwargs)
+
+    device="cpu"
+
+    optimizer = optim.AdamW(model.parameters(), lr=0.001)
+    # scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
+    for epoch in range(1, 25):
+        train(model, device, train_loader, optimizer, epoch, log_interval=10)
+        test(model, device, test_loader)
+        # scheduler.step()
+
+    torch.save(model.state_dict(), "kilter_transformer.pt")
+
+if __name__ == "__main__":
+    main()

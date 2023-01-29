@@ -155,11 +155,11 @@ def main():
         transforms.ToTensor(),
         # transforms.Normalize((0,), (4,)),
         ])
-    if Path("climb_dataset_img.pt").exists():
-        dataset = torch.load("climb_dataset_img.pt")
+    if Path("_datasets/cache/climb_dataset_img.pt").exists():
+        dataset = torch.load("_datasets/cache/climb_dataset_img.pt")
     else:
         dataset = ClimbDataset(transform=transform)
-        torch.save(dataset, "climb_dataset_img.pt")
+        torch.save(dataset, "_datasets/cache/climb_dataset_img.pt")
     train_set_size = int(len(dataset)*0.9)
     test_set_size = len(dataset) - train_set_size
     train_set, test_set = torch.utils.data.random_split(dataset, [train_set_size, test_set_size], generator=torch.Generator().manual_seed(123))
