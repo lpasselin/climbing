@@ -1,0 +1,75 @@
+// see https://code.visualstudio.com/docs/remote/containers for more info
+// For now, this file must be updated manually to replace UUID with azure environment UUID
+{
+    "name": "pid-devcontainer",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".",
+    },
+    // This line allows you to use Docker runconfigs if you set "sharedVolumes": false
+    "mounts": [
+        "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    ],
+    // Set *default* container specific settings.json values on container create.
+    "settings": {
+        "python.pythonPath": "/opt/miniconda/envs/projectenv/bin/python", // to be removed
+        "python.defaultInterpreterPath": "/opt/miniconda/envs/projectenv/bin/python",
+        "python.terminal.activateEnvironment": false, // VS code attempts to activate base conda env
+        "python.autoComplete.extraPaths": [
+            "./"
+        ],
+        "python.languageServer": "Pylance",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": false,
+        "python.linting.flake8Enabled": true,
+        "python.testing.pytestEnabled": true,
+        "[python]": {
+            "editor.defaultFormatter": "ms-python.black-formatter",
+            "editor.formatOnSaveMode": "file",
+            "editor.formatOnSave": true,
+            "editor.codeActionsOnSave": {
+                "source.organizeImports": true
+            }
+        },
+        "black-formatter.importStrategy": "fromEnvironment",
+        "isort.importStrategy": "fromEnvironment",
+        "[yaml]": {
+            "editor.formatOnSave": false
+        },
+        "python.envFile": "${workspaceFolder}/.env"
+    },
+    // Add the IDs of extensions you want installed when the container is created.
+    "extensions": [
+        "ms-azuretools.vscode-docker",
+        "ms-python.python",
+        "mhutchie.git-graph",
+        "ms-toolsai.vscode-ai",
+        "ms-python.vscode-pylance",
+        "ms-vscode.azure-account",
+        "eamodio.gitlens",
+        "gruntfuggly.todo-tree",
+        "bdavs.expect",
+        "ms-python.black-formatter",
+        "ms-python.isort"
+    ],
+    // Use 'forwardPorts' to make a list of ports inside the container available locally.
+    // "forwardPorts": [],
+    // Uncomment to connect as a non-root user. See https://aka.ms/vscode-remote/containers/non-root.
+    // "remoteUser": "vscode",
+    "runArgs": [
+        "--shm-size",
+        "8g",
+        // "--env-file",
+        // ".devcontainer/devcontainer.env"
+    ], // "--gpus", "all"
+    // "containerEnv": {
+    // 	"PATH": "${containerEnv:PATH}:/some/other/path",
+    // },
+    // "remoteEnv": {
+    //     "PATH": "${containerEnv:PATH}:/some/other/path",
+    //     "MY_REMOTE_VARIABLE": "some-other-value-here",
+    //     "MY_REMOTE_VARIABLE2": "${localEnv:SOME_LOCAL_VAR}"
+    // }
+    // "postCreateCommand": "/bin/bash --login .devcontainer/scripts/postCreateCommand.sh",
+    // "postStartCommand": "bash --login .devcontainer/scripts/postStartCommand.sh",
+}
