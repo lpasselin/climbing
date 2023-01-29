@@ -188,7 +188,7 @@ def main():
     img = climb_data.img() * 50
 
     import cv2
-    cv2.imwrite("test.png", img)
+    cv2.imwrite("test.png", img[..., 0])
 
     print("done")
 
