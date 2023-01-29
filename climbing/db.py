@@ -171,7 +171,7 @@ class ClimbPlacement(Base):
 
 def all_climbs():
     engine = create_engine(
-        "sqlite:///file:climbing/db.sqlite3?mode=ro&nolock=1&uri=true",
+        "sqlite:///file:_datasets/kilter_app_db.sqlite3?mode=ro&nolock=1&uri=true",
         # echo=True
     )
     Session = sessionmaker()
