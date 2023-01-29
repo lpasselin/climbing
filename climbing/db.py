@@ -17,6 +17,8 @@ import numpy as np
 import json
 from tqdm import tqdm
 
+MAX_X = 140 // 4
+MAX_Y = 152 // 4
 
 class HoldRole(str, Enum):
     start = "start"
@@ -60,8 +62,7 @@ class ClimbData(BaseModel):
     ascensionist_count: int
 
     def img(self):
-        MAX_X = 140 // 4
-        MAX_Y = 152 // 4
+        
         img = np.zeros((MAX_Y, MAX_X, 2), dtype=np.uint8)
         img[..., 1] = int(self.angle)
         
