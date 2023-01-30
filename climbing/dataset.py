@@ -24,7 +24,7 @@ class ClimbDataset(torch.utils.data.Dataset):
         return img, difficulty_average
 
 class ClimbDatasetTransformer(torch.utils.data.Dataset):
-    MAX_N_HOLDS = 32
+    MAX_N_HOLDS = 100  # (actual max is 93 in initial Kilter dataset)
     HOLD_DATA_LEN = 2+1
 
     def __init__(self):
@@ -50,6 +50,6 @@ class ClimbDatasetTransformer(torch.utils.data.Dataset):
             data[i, 2] = HOLD_ROLE_ID[hold.role]
         
         return data, difficulty_average
-        
+
     def __len__(self):
         return len(self.climbs)

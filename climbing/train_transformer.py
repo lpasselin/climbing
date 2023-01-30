@@ -13,7 +13,7 @@ from typing import Union, Literal
 from pathlib import Path
 
 
-def train(args, model, device, train_loader, optimizer, epoch, log_interval=10, loss_type="regression"):
+def train(model, device, train_loader, optimizer, epoch, log_interval=10, loss_type="regression"):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
@@ -28,12 +28,10 @@ def train(args, model, device, train_loader, optimizer, epoch, log_interval=10, 
             ValueError()
         loss.backward()
         optimizer.step()
-        if batch_idx % args.log_interval == 0:
+        if batch_idx % log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
-            if args.dry_run:
-                break
 
 
 def test(model, device, test_loader, loss_type="regression"):
@@ -68,9 +66,9 @@ def main():
 
     model = ClimbingSimpleViT(
         hold_data_len=2+1,
-        dim = 512,
-        depth = 6,
-        heads = 16,
+        dim = 256,
+        depth = 4,
+        heads = 8,
         mlp_dim = 1024
     )
     if Path("_datasets/cache/climb_dataset_transformer.pt").exists():
@@ -86,7 +84,7 @@ def main():
 
     device="cpu"
 
-    optimizer = optim.AdamW(model.parameters(), lr=0.001)
+    optimizer = optim.AdamW(model.parameters(), lr=0.00001)
     # scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
     for epoch in range(1, 25):
         train(model, device, train_loader, optimizer, epoch, log_interval=10)

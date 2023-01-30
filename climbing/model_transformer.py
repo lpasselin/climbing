@@ -105,7 +105,7 @@ if __name__ == "__main__":
         dim = 512,
         depth = 6,
         heads = 16,
-        mlp_dim = 2048
+        mlp_dim = 1024
     )
     batch_size = 5
     hold_data_len = 2+1  # x, y, HOLD_TYPE
